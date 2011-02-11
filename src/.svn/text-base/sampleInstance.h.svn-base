@@ -1,0 +1,27 @@
+/*
+ *  sampleInstance.h
+ *  BronzeFormatiPhone
+ *
+ *  Created by Chris on 30/12/2010.
+ *
+ */
+
+#ifndef _SAMPLE_INSTANCE_H
+#define _SAMPLE_INSTANCE_H
+
+
+class sampleInstance {
+public:
+	float* buffer;
+	unsigned int sampleLength; // in samples
+	unsigned int fadeInTime, fadeOutTime, fadeOutStartTime; //in samples
+	float fadeInStep, fadeOutStep;
+	unsigned int pos; //current position
+	unsigned int nChannels;
+	unsigned long startTime;
+	unsigned int frameOffset;
+};
+
+#endif
+
+

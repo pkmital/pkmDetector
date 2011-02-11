@@ -1,0 +1,66 @@
+/*
+ *  audioEngine.h
+ *  BronzeFormatiPhone
+ *
+ *  Created by Chris on 30/12/2010.
+ *
+ */
+
+#ifndef _AUDIO_ENGINE_H
+#define _AUDIO_ENGINE_H
+
+#include "Accelerate/accelerate.h"
+#include <list>
+#include "sampleInstance.h"
+
+typedef std::list<sampleInstance*> playListType;
+
+enum stereoModeEnum {
+	MONO=1, STEREO=2
+};
+
+class audioEngine {
+public:
+	audioEngine(const unsigned int sampleRate, const unsigned int bufferSize, const unsigned int channelCount, const stereoModeEnum channelMode, float bpm, unsigned int beatsPerBar);
+	~audioEngine();
+	
+	//call this in the audio request callback
+	void process(float * output, int bufferSize, int nChannels);
+	
+	/**
+	 queue a sample for playback using logical time
+	 */
+	void scheduleAtBeat(unsigned int bar, float beat, float* buffer, unsigned int sampleLength,
+				  unsigned int fadeInTime, unsigned int fadeOutTime, stereoModeEnum nChannels);
+
+	/**
+	 queue a sample for playback
+	 sampleStartTime is in samples, since the audio clock started
+	 */
+	void schedule(long sampleStartTime, float* buffer, unsigned int sampleLength,
+				  unsigned int fadeInTime, unsigned int fadeOutTime, stereoModeEnum nChannels);
+	
+	inline unsigned long getCurrentTime(){return currTime;}  //return the offset (in samples) of the start of the last audio frame
+	
+//	inline float getCurrentBeat(){return 0.0;};
+	
+private:
+	void addToPlayList(sampleInstance *sampleInst);
+	unsigned int sampleRate, soundStreamBufferSize;
+	float channelCount;
+	stereoModeEnum channelMode;
+	float *audio, *scratch;
+	playListType playList, playQueue;
+	float fadeOutStart, fadeInStart;
+	unsigned int playLength, fadeInTime;
+	int fadeOutTime;
+	float bpm;
+	double beatLength; //in samples
+	unsigned int beatsPerBar;
+	
+	unsigned long currTime; // in samples
+	
+};
+
+
+#endif

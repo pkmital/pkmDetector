@@ -1,0 +1,133 @@
+#include "bronzeFormatApp.h"
+
+
+//--------------------------------------------------------------
+void bronzeFormatApp::setup(){	
+	// register touch events
+	ofRegisterTouchEvents(this);
+	
+	// initialize the accelerometer
+	ofxAccelerometer.setup();
+	
+	//iPhoneAlerts will be sent to this.
+	ofxiPhoneAlerts.addListener(this);
+	
+	//If you want a landscape oreintation 
+	//iPhoneSetOrientation(OFXIPHONE_ORIENTATION_LANDSCAPE_RIGHT);
+	
+	ofBackground(127,127,127);
+		
+	//generate some test audio to play
+	bufferCount= 1 ;
+	buflength = 80000;
+	for(int i=0; i<bufferCount; i++) {
+		float *buf = (float*)malloc(buflength * sizeof(float));
+		//make stereo file
+		for(int j=0; j < buflength; j+=1) {
+			buf[j] = ofRandomf() * (1.0 / bufferCount);
+//			buf[j] = 0.1;
+		}
+		buffers.push_back(buf);
+	}
+	
+	//load some samples (for testing)
+	s1.read(ofToDataPath("kickdrum68.wav"));
+	s2.read(ofToDataPath("snaredrum199.wav"));
+	s3.read(ofToDataPath("hihat78.wav"));
+	stereoTest.read(ofToDataPath("samba.wav"));
+	
+	soundStreamBufferSize = 512;
+
+	audioEng = new audioEngine(SAMPLERATE, soundStreamBufferSize, 10, MONO, 140.2, 4);
+	
+	//test: schedule some samples at random times
+	for(int s=0; s < 30; s++) {
+		float beat = ofRandomuf() * 4;
+		audioEng->scheduleAtBeat(round(ofRandomuf() * 5), beat - fmod(beat,(float)0.25), s1.floatData, s1.length, 0, 0, MONO);
+		beat = ofRandomuf() * 4;
+		audioEng->scheduleAtBeat(round(ofRandomuf() * 5), beat - fmod(beat,(float)0.25), s2.floatData, s2.length, 10, 10, MONO);
+		beat = ofRandomuf() * 4;
+		audioEng->scheduleAtBeat(round(ofRandomuf() * 5), beat - fmod(beat,(float)0.125), s3.floatData, s3.length, 10, 10, MONO);
+	}
+	
+	
+//	for(int s=0; s < 30; s++) {
+//		audioEng->schedule(round(ofRandomuf() * 200000), s1.floatData, s1.length, 0, 0, MONO);
+//		audioEng->schedule(round(ofRandomuf() * 200000), s2.floatData, s2.length, 10, 10, MONO);
+//		audioEng->schedule(round(ofRandomuf() * 200000), s3.floatData, s3.length, 10, 10, MONO);
+//	}
+//	audioEng->schedule(0, stereoTest.floatData, stereoTest.length, 0, 0, STEREO);
+//	audioEng->schedule(0, buffers[0], buflength/2, 20000, 20000, STEREO);
+	ofSoundStreamSetup(2,0,this, SAMPLERATE, soundStreamBufferSize, 4);
+	cout << "Audio started\n";
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::update(){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::draw(){
+	
+}
+
+
+void bronzeFormatApp::audioRequested(float * output, int bufferSize, int nChannels){
+	audioEng->process(output, bufferSize, nChannels);
+}
+
+
+
+//--------------------------------------------------------------
+void bronzeFormatApp::exit(){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::touchDown(ofTouchEventArgs &touch){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::touchMoved(ofTouchEventArgs &touch){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::touchUp(ofTouchEventArgs &touch){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::touchDoubleTap(ofTouchEventArgs &touch){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::lostFocus(){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::gotFocus(){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::gotMemoryWarning(){
+
+}
+
+//--------------------------------------------------------------
+void bronzeFormatApp::deviceOrientationChanged(int newOrientation){
+
+}
+
+bronzeFormatApp::~bronzeFormatApp() {
+	for(int i=0; i < buffers.size(); i++) {
+		delete[] buffers[i];
+	}
+}
+
+

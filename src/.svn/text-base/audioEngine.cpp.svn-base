@@ -1,0 +1,154 @@
+/*
+ *  audioEngine.cpp
+ *  BronzeFormatiPhone
+ *
+ *  Created by Chris on 30/12/2010.
+ *
+ */
+
+#include "audioEngine.h"
+#include <iostream>
+
+using namespace std;
+
+audioEngine::audioEngine(const unsigned int sampleRate, const unsigned int bufferSize, const unsigned int channelCount, const stereoModeEnum channelMode,
+						 float bpm, unsigned int beatsPerBar)
+:sampleRate(sampleRate), soundStreamBufferSize(bufferSize), channelCount(channelCount), channelMode(channelMode), bpm(bpm), beatsPerBar(beatsPerBar) {
+	audio = (float*)malloc(soundStreamBufferSize * channelMode * sizeof(float));
+	scratch = (float*)malloc(soundStreamBufferSize * channelMode * sizeof(float));	
+	currTime = 0;
+	beatLength = 60.0 / bpm * (double) sampleRate;
+}
+
+audioEngine::~audioEngine() {
+	delete[] audio, scratch;
+}
+
+void audioEngine::process(float * output, int bufferSize, int nChannels) {
+	//process play queue
+	for(playListType::iterator i = playQueue.begin(); i != playQueue.end(); ++i) {
+		//if sample should start in this frame
+		unsigned long timeUntilStart = (*i)->startTime - currTime;
+		if (timeUntilStart < bufferSize) {
+			(*i)->frameOffset = timeUntilStart;
+			//add to playlist
+			playList.push_back(*i);
+			//remove from queue
+			i = playQueue.erase(i);
+		}
+	}
+	
+	//mix samples in playlist
+	vDSP_vclr(audio, 1, bufferSize);
+	int idx=0;
+	for(playListType::iterator i = playList.begin(); i != playList.end(); ++i) {
+		//if more audio to play
+		if((*i)->pos < (*i)->sampleLength) {
+			int renderLength = min((*i)->sampleLength - (*i)->pos, (unsigned) bufferSize - (*i)->frameOffset);
+			//fading in?
+			fadeInTime = playLength = fadeOutTime = 0;
+			if ((*i)->pos < (*i)->fadeInTime) {
+				fadeInTime = min((unsigned) renderLength, (*i)->fadeInTime - (*i)->pos);
+				//would be better with vDSP_vrampmul but for some reason this isn't in the simlulator headers (ios4.2)
+				//create ramp
+				fadeInStart = (*i)->fadeInStep * (*i)->pos;
+				vDSP_vramp(&fadeInStart, &((*i)->fadeInStep), scratch, channelMode, fadeInTime);
+				if (STEREO == channelMode) {
+					//create ramp with double steps
+					vDSP_vramp(&fadeInStart, &((*i)->fadeInStep), scratch+1, channelMode, fadeInTime);
+				}
+				//multiply by buffer
+				vDSP_vmul(scratch,  1, (*i)->buffer + ((*i)->pos * channelMode), 1, scratch, 1, fadeInTime * channelMode);
+				//add to buffer
+				unsigned int audioOffset = (*i)->frameOffset * channelMode;
+				vDSP_vadd(audio + audioOffset, 1, scratch, 1, audio + audioOffset, 1, fadeInTime * channelMode);
+			}
+			//more buffer to play after fade in?
+			if (fadeInTime < bufferSize) {
+				fadeOutTime = abs(max((signed)(*i)->pos + renderLength - (signed)(*i)->fadeOutStartTime, 0));
+				fadeOutTime = min(renderLength, fadeOutTime);
+				float totalFadeTime = fadeOutTime + fadeInTime;
+				playLength = min((*i)->sampleLength - (*i)->pos - totalFadeTime, (unsigned) renderLength - totalFadeTime);
+				unsigned int audioOffset = ((*i)->frameOffset + fadeInTime) * channelMode;
+				unsigned int playBufferOffset = ((*i)->pos + fadeInTime) * channelMode;
+				vDSP_vadd(audio + audioOffset, 1, (*i)->buffer + playBufferOffset, 1, audio + audioOffset, 1,  playLength * channelMode);
+				
+				if (fadeOutTime > 0) {
+					//create ramp
+					unsigned int relFadeOutStartPos = fadeInTime + playLength;
+					unsigned int fadeOutStartPos = (*i)->pos + relFadeOutStartPos;
+					fadeOutStart = ((*i)->fadeOutTime - (fadeOutStartPos - (*i)->fadeOutStartTime)) * -((*i)->fadeOutStep);
+					vDSP_vramp(&fadeOutStart, &((*i)->fadeOutStep), scratch, channelMode, fadeOutTime);
+					if (STEREO == channelMode) {
+						vDSP_vramp(&fadeOutStart, &((*i)->fadeOutStep), scratch+1, channelMode, fadeInTime);
+					}
+					//multiply by buffer
+					vDSP_vmul(scratch,  1, (*i)->buffer + (fadeOutStartPos * channelMode), 1, scratch, 1, fadeOutTime * channelMode);
+					//add to buffer
+					audioOffset = (relFadeOutStartPos+(*i)->frameOffset) * channelMode;
+					vDSP_vadd(audio + audioOffset, 1, scratch, 1, audio + audioOffset, 1, fadeOutTime * channelMode);
+				}
+				
+			}
+			//printf("[%d] %d %d %d %d %d\n", idx, renderLength, fadeInTime, playLength, fadeOutTime, channelMode);
+			idx++;
+			(*i)->pos += renderLength;
+			(*i)->frameOffset=0;
+		} else {
+			//free sampleInstance
+			delete *i;
+			//remove sample from playlist
+			playList.erase(i);
+		}
+	}
+	
+	//divide by num mixer channels
+	vDSP_vsdiv(audio, 1, &channelCount, audio, 1, bufferSize * channelMode);		
+	if (MONO == channelMode) {
+		for (int i = 0; i < bufferSize; i++){
+			output[i*nChannels    ] = audio[i];
+			output[i*nChannels + 1] = audio[i];
+		}
+	}
+	else {
+		for (int i = 0; i < bufferSize; i++){
+			output[i*nChannels    ] = audio[i * 2];
+			output[i*nChannels + 1] = audio[(2*i) + 1];
+			//cout << audio[i*2] << "," << audio[(2*i) + 1] << ",";  //test
+		}
+	}
+	
+	currTime += bufferSize;
+}
+
+void audioEngine::addToPlayList(sampleInstance *sampleInst) {
+	playList.push_front(sampleInst);
+}
+
+void audioEngine::scheduleAtBeat(unsigned int bar, float beat, float* buffer, unsigned int sampleLength,
+								 unsigned int fadeInTime, unsigned int fadeOutTime, stereoModeEnum nChannels) {
+	//translate beat time to sample offset
+	float beatOffset = (bar * beatsPerBar) + beat;
+	long sampleOffset = round(beatLength * beatOffset);
+	schedule(sampleOffset, buffer, sampleLength, fadeInTime, fadeOutTime, nChannels);
+	
+}
+
+void audioEngine::schedule(long sampleStartTime, float* buffer, unsigned int sampleLength,
+			  unsigned int fadeInTime, unsigned int fadeOutTime, stereoModeEnum nChannels) 
+{
+	sampleInstance *sInst = new sampleInstance();
+	sInst->buffer = buffer;
+	sInst->sampleLength = sampleLength;
+	sInst->pos=0;
+	sInst->nChannels=nChannels;
+	sInst->fadeInTime = fadeInTime;
+	sInst->fadeInStep = sInst->fadeInTime > 0 ? 1.0/sInst->fadeInTime : 0;
+	sInst->fadeOutTime = fadeOutTime;
+	sInst->fadeOutStartTime = sInst->sampleLength - sInst->fadeOutTime;
+	sInst->fadeOutStep = sInst->fadeOutTime > 0 ? -1.0/sInst->fadeOutTime : 0;
+	sInst->startTime = sampleStartTime;
+	sInst->frameOffset = 0;
+	playQueue.push_back(sInst);
+}
+
